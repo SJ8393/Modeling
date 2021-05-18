@@ -1,0 +1,209 @@
+import pencilbox as pb
+import numpy as np   # linear algebra
+import pandas as pd   # data processing, CSV file I/O (e.g. pd.read_csv)
+import seaborn as sns   # visualizations
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+import warnings
+warnings.filterwarnings('ignore')
+
+## Reading data from a Google sheet
+data = pd.read_csv('https://docs.google.com/spreadsheets/d/1CBrRdPzwDteid9XjeqDm1nSASptKqyMXCDAyEq1OQMg/export?format=csv&gid=0')
+
+## Display the top 5 rows of data
+data.head()
+
+# Size of the data
+data.shape
+
+data.info()
+
+data.describe(include = 'all')
+
+## Missing Value Treatment
+
+# Missing value percentage in data
+100*data.isnull().sum()/data.shape[0]
+
+# Removing rows where avl_perc variable is missing
+data = data[~data['avl_perc'].isnull()].copy()
+
+gobd_dates = ['8/7/2020','8/8/2020','8/9/2020','8/10/2020','8/11/2020','8/12/2020','8/13/2020','8/14/2020','8/15/2020','8/16/2020']
+
+# Removing data for GOBD dates
+data = data[~data['date_'].isin(gobd_dates)]
+
+## Add a flag for weekend
+from datetime import datetime  # for weekday() function
+data['date_']= pd.to_datetime(data['date_'])
+data['weekend'] = data['date_'].apply(lambda x: 0 if x.weekday() < 5 else 1)
+
+### Univariate Analysis
+
+# Distribution of weekend flag
+sns.countplot(data['weekend'])
+
+# Boxplot of Conversion
+sns.boxplot(data['conv'])
+plt.show()
+
+# Boxplot of Availability %
+sns.boxplot(data['avl_perc'])
+plt.show()
+
+# Boxplot of Promise Time
+sns.boxplot(data['promise_time'])
+plt.show()
+
+# Removing date_ variable from the dataset
+data.drop(['date_'], axis = 1, inplace = True)
+
+# Creating the distplots for all variables
+
+plt.figure(figsize = (18,10))
+
+plt.subplot(221)
+sns.distplot(data['conv'])
+plt.title('conv', fontsize = 14)
+plt.xlabel('')
+plt.tight_layout(h_pad = 3, w_pad = 2)
+
+plt.subplot(222)
+sns.distplot(data['avl_perc'])
+plt.title('avl_perc', fontsize = 14)
+plt.xlabel('')
+plt.tight_layout(h_pad = 3, w_pad = 2)
+
+plt.subplot(223)
+sns.distplot(data['rm_perc'])
+plt.title('rm_perc', fontsize = 14)
+plt.xlabel('')
+plt.tight_layout(h_pad = 3, w_pad = 2)
+
+plt.subplot(224)
+sns.distplot(data['promise_time'])
+plt.title('promise_time', fontsize = 14)
+plt.xlabel('')
+plt.tight_layout(h_pad = 3, w_pad = 2)
+
+plt.show()
+
+### Bivariate Analysis
+
+## Correlation matrix
+
+plt.figure(figsize = (10,8))
+sns.heatmap(data.corr(), cmap = "YlGnBu", annot = True)
+plt.show()
+
+## Pairplots
+
+sns.pairplot(data)
+plt.show()
+
+### Variance Inflation Factor
+# from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+# X = data[['avl_perc', 'rm_perc', 'promise_time']]
+# # VIF dataframe
+# vif_data = pd.DataFrame()
+# vif_data["feature"] = X.columns
+  
+# # calculating VIF for each feature
+# vif_data["VIF"] = [variance_inflation_factor(X.values, i)
+#                           for i in range(len(X.columns))]
+# vif_data
+
+### Data Pre-processing
+
+X = data[['avl_perc','rm_perc','promise_time','weekend']]
+y = data['conv']
+
+import sklearn
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X,y,train_size = 0.7, random_state = 100)
+
+from sklearn.preprocessing import StandardScaler
+
+# Scaling train
+scaler = StandardScaler()
+X_train[['avl_perc','rm_perc','promise_time']] = scaler.fit_transform(X_train[['avl_perc','rm_perc','promise_time']])
+X_test[['avl_perc','rm_perc','promise_time']] = scaler.transform(X_test[['avl_perc','rm_perc','promise_time']])
+
+### Modeling
+
+from sklearn.linear_model import LinearRegression
+
+lr = LinearRegression()  ## Creating Linear Regression object
+lr.fit(X_train, y_train)
+print(lr.intercept_)
+print(lr.coef_)
+
+print("The linear model is: Y = {:.5} + {:.5}*avl_perc + {:.5}*rm_perc + {:.5}*promise_time + {:.5}*weekend".format(lr.intercept_, lr.coef_[0], lr.coef_[1], lr.coef_[2], lr.coef_[3]))
+
+import statsmodels.api as sm
+
+X2 = sm.add_constant(X_train)
+est = sm.OLS(y_train, X2)
+est2 = est.fit()
+print(est2.summary())
+
+### Making predictions on the test data set
+y_pred = lr.predict(X_test)
+
+## Model evaluation
+c = [i for i in range(1,69,1)]
+
+fig = plt.figure()
+plt.plot(c, y_test, color = "blue")
+plt.plot(c, y_pred, color = "green")
+
+fig.suptitle("Actual & Predicted")
+
+## Plotting the errors
+fig = plt.figure()
+plt.plot(c, y_test-y_pred, color = 'blue')
+
+from sklearn.metrics import mean_squared_error, r2_score
+
+mse = mean_squared_error(y_test,y_pred,squared=True)
+rmse = mean_squared_error(y_test,y_pred,squared=False)
+r_squared = r2_score(y_test,y_pred)
+
+print("MSE:",mse)
+print("RMSE:",rmse)
+print("R-sq:",r_squared)
+
+### Checking the assumptions of Linear Regression
+## https://www.kaggle.com/shrutimechlearn/step-by-step-assumptions-linear-regression
+
+## 1. Linearity = Already checked through Pairplots above
+## 2. Mean of residuals should be zero
+
+residuals = y_test-y_pred
+mean_residuals = np.mean(residuals)
+print("Mean of Residuals {:.2}".format(mean_residuals))
+
+## 3. Check for Homoscadesticity
+p = sns.scatterplot(y_pred,residuals)
+plt.xlabel('y_pred/predicted values')
+plt.ylabel('residuals')
+plt.ylim(-0.06,0.06)
+plt.xlim(0,0.15)
+p = sns.lineplot([0,26],[0,0],color='blue')
+p = plt.title('Residuals vs fitted values plot for homoscedasticity check')
+
+## 4. Normality of Residuals
+p = sns.distplot(residuals,kde=True)
+p = plt.title('Normality of error terms/residuals')
+
+## 5. No autocorrelation of residuals
+p = sns.lineplot(y_pred,residuals,marker='o',color='blue')
+plt.xlabel('y_pred/predicted values')
+plt.ylabel('Residuals')
+plt.ylim(-0.06,0.06)
+plt.xlim(0,0.15)
+p = sns.lineplot([0,26],[0,0],color='red')
+p = plt.title('Residuals vs fitted values plot for autocorrelation check')
